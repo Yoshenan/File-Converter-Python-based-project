@@ -3,6 +3,9 @@ import pymupdf
 import cairosvg
 import markdown
 from weasyprint import HTML
+import requests
+import json
+import re
 
 
 def convert_document(user_input, output_user):
@@ -75,3 +78,27 @@ def merge_pdfs(pdf_list, output_user):
     # Save the merged PDF
     merged_pdf.save(output_user)
     merged_pdf.close()
+
+def extract_text(user_input):
+     url = "https://ocr.asprise.com/api/v1/receipt"
+     data = {'api_key':"TEST","recognizer": 'auto','ref_no' : 'oct_python_123'}
+     with open(user_input,"rb") as f:
+         res = requests.post(url , 
+                        data = data ,
+                        files = {'file':f},timeout=60)
+         res.raise_for_status()
+         receipts = res.json().get("receipts")
+         if not receipts:
+             return None
+         r = receipts[0]
+
+         vendor, date, total = r.get("merchant_name"), r.get("date"), r.get("total")
+ 
+         if total is None:                               # backup: search the raw text for the total
+           for line in (r.get("ocr_text") or "").splitlines():
+               if "total" in line.lower() and "subtotal" not in line.lower():
+                amounts = re.findall(r"\d[\d,]*\.\d{2}", line)
+                if amounts:
+                    total = float(amounts[-1].replace(",", ""))
+         return vendor, date, total
+

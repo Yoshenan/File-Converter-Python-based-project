@@ -5,6 +5,8 @@ import yaml
 import re
 import num2words
 import numpy as np
+import shutil
+from pathlib import Path
 
 def convert_data(user_input, output_user):
     _, user = os.path.splitext(user_input.lower())
@@ -228,4 +230,28 @@ def clean_data(df:pd.DataFrame)->  pd.DataFrame:
           .pipe(convert_types)    
           .pipe(optimize)
     )
+    
+def file_smart(user_input,word = ""):
+    path=user_input
+    files = os.listdir(path)
+
+    if word == "":
+    
+      for file in files:
+          extension = os.path.splitext(file)[1][1:].lower()
+
+          if extension =="":
+             extension = "no_extension"
+
+          if os.path.exists(path+ '/' + extension):
+               shutil.move(path + '/'+file,path +'/'+extension+'/'+file)
+          else:
+               os.makedirs(path+'/'+extension)
+               shutil.move(path + '/'+file,path +'/'+extension+'/'+file)
+           
+      for file in Path(path).rglob("*"):
+          if file.is_file() and word.lower() in file.name.lower():
+             print(file)
+
+
     

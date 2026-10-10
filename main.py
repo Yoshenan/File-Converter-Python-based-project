@@ -1,55 +1,19 @@
 import os
-from image import convert_image, text_to_qr, image_to_gif, image_to_text,image_to_excel
+import tempfile
+import pandas as pd
+import streamlit as st
+
+# Import your custom modules
+from image import convert_image, text_to_qr, image_to_gif, image_to_text, image_to_excel
 from video import convert_video, image_to_video, convert_audio, add_audio_to_image
 from encoding import file_to_base, base_to_file
-from data import convert_data,clean_data
+from data import convert_data, clean_data, file_smart
 from document import convert_document, merge_pdfs
-import pandas as pd
+
 def main():
-    user_input = input("Enter File, comma-separated PDFs, or Text: ").strip().strip('"').strip("'")
+    st.set_page_config(page_title="Universal File Converter", page_icon="⚡", layout="centered")
+    st.title("⚡ Universal File Converter")
 
-    if not user_input:
-        print("Input cannot be empty")
-        return
-
-    # 0. SIMPLE HANDLER: Multi-file PDF Merging
-    if "," in user_input:
-        pdf_list = [f.strip().strip('"').strip("'") for f in user_input.split(",")]
-        user_preference = input("Multiple files detected. Enter target format (e.g. .pdf): ").strip().lower()
-        
-        if not user_preference.startswith("."):
-            user_preference = "." + user_preference
-
-        if user_preference == ".pdf":
-            output_user = "merged_output.pdf"
-            merge_pdfs(pdf_list, output_user)
-        else:
-            print(f"Cannot merge multiple files into {user_preference}")
-        return
-
-    # 1. Handle QR Code generation if input is NOT a file on disk
-    if not os.path.exists(user_input):
-        user_preference = input("Path not found on disk. Is this text for a QR code? Enter target format (e.g. .png): ").strip().lower()
-        if not user_preference.startswith("."):
-            user_preference = "." + user_preference
-
-        if user_preference in [".png", ".jpg", ".jpeg"]:
-            output_user = "qrcode" + user_preference
-            text_to_qr(user_input, output_user)
-        else:
-            print(f"File does not exist: {user_input}")
-        return
-
-    # 2. Standard File Conversions setup
-    file_root, original = os.path.splitext(user_input)
-    user_preference = input(f"Detected {original}. Enter target format: ").strip().lower()
-
-    if not user_preference.startswith("."):
-        user_preference = "." + user_preference
-
-    output_user = file_root + user_preference
-
-    # Extension categories
     ocr_supported_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".pdf"}
     image_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
     video_exts = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
@@ -62,73 +26,151 @@ def main():
         ".html"
     }
     document_exts = {".pdf", ".svg", ".md", ".markdown"}
-    src_ext = original.lower()
 
-    # 3. Routing logic
-    # OCR Extraction (Image or PDF -> .txt)
-    if src_ext in ocr_supported_exts and user_preference == ".txt":
-        image_to_text(user_input, output_user)
-    elif src_ext and user_preference == ".csv":
-        df_raw = pd.read_csv(user_input)
-        df_clean = clean_data(df_raw)
-        df_clean.to_csv(output_user,index=False)
+    st.subheader("1. Input File(s) or Text")
 
-    # Image -> GIF
-    elif src_ext in image_exts and user_preference == ".gif":
-        image_to_gif(user_input, output_user)
+    input_choice = st.radio("Select Input Type", ["Upload File(s)", "Text / URL"], horizontal=True)
 
-    # Route both Images and PDFs to Excel
-    elif (src_ext in image_exts or src_ext == ".pdf") and user_preference in [".xlsx", ".xls"]:
-        image_to_excel(user_input, output_user)
-    
-    # Standard Image Conversions
-    elif src_ext in image_exts and user_preference in image_exts:
-        convert_image(user_input, output_user)
+    # -------------------------------------------------------------
+    # OPTION A: TEXT / URL (QR CODE GENERATION)
+    # -------------------------------------------------------------
+    if input_choice == "Text / URL":
+        user_input = st.text_area("Enter Text or URL to Encode")
+        user_preference = st.selectbox("Target Format:", [".png", ".jpg", ".jpeg"])
 
-    # Data Conversions
-    elif src_ext in data_exts and user_preference in data_exts:
-        convert_data(user_input, output_user)
+        if user_input and st.button("Generate QR Code"):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                output_user = os.path.join(tmpdir, f"qrcode{user_preference}")
+                text_to_qr(user_input, output_user)
 
-    # Document Conversions
-    elif src_ext in document_exts and user_preference in image_exts:
-        convert_document(user_input, output_user)
+                with open(output_user, "rb") as f:
+                    st.image(output_user, caption="Generated QR Code", width=200)
+                    st.download_button(
+                        label=f"📥 Download qrcode{user_preference}",
+                        data=f.read(),
+                        file_name=f"qrcode{user_preference}",
+                        mime=f"image/{user_preference.replace('.', '')}"
+                    )
 
-    # Video Conversions
-    elif src_ext in video_exts and user_preference in video_exts:
-        convert_video(user_input, output_user)
-
-    # Encoding to Base string file
-    elif user_preference in base_map:
-        base_num = base_map[user_preference]
-        file_to_base(user_input, output_user, base_type=base_num)
-
-    # Decoding Base string file to binary file
-    elif src_ext in base_map:
-        base_num = base_map[src_ext]
-        base_to_file(user_input, output_user, base_type=base_num)
-
-    # Audio Conversions
-    elif src_ext in audio_exts and user_preference in audio_exts:
-        convert_audio(user_input, output_user)
-
-    # Video Audio-Extraction
-    elif src_ext in video_exts and user_preference in audio_exts:
-        convert_audio(user_input, output_user)
-
-    # Image to Video Conversion
-    elif src_ext in image_exts and user_preference in video_exts:
-        add_music = input("Add audio? (y/n): ").strip().lower()
-        if add_music == "y":
-            audio_path = input("Enter audio file path: ").strip().strip('"').strip("'")
-            if os.path.exists(audio_path):
-                add_audio_to_image(user_input, audio_path, output_user)
-            else:
-                print("Audio file does not exist")
-        else:
-            image_to_video(user_input, output_user)
-
+    # -------------------------------------------------------------
+    # OPTION B: FILE UPLOADER (SINGLE FILE OR MULTI-PDF MERGE)
+    # -------------------------------------------------------------
     else:
-        print(f"Cannot convert {src_ext} to {user_preference}")
+        uploaded_files = st.file_uploader("Drop File(s) or browse", accept_multiple_files=True)
+
+        if uploaded_files:
+            # MULTI-FILE MERGE (PDFs)
+            if len(uploaded_files) > 1:
+                all_pdfs = all(f.name.lower().endswith(".pdf") for f in uploaded_files)
+                if all_pdfs:
+                    st.info(f"Detected **{len(uploaded_files)} PDF Files** for merging")
+                    target_ext = st.text_input("Enter Target Format", value=".pdf").strip().lower()
+                    if target_ext and not target_ext.startswith("."):
+                        target_ext = "." + target_ext
+
+                    if st.button("Merge PDFs"):
+                        if target_ext == ".pdf":
+                            with tempfile.TemporaryDirectory() as tmpdir:
+                                pdf_paths = []
+                                for idx, uploaded_file in enumerate(uploaded_files):
+                                    path = os.path.join(tmpdir, f"input_{idx}.pdf")
+                                    with open(path, "wb") as f:
+                                        f.write(uploaded_file.getbuffer())
+                                    pdf_paths.append(path)
+
+                                output_path = os.path.join(tmpdir, "merged_output.pdf")
+                                merge_pdfs(pdf_paths, output_path)
+
+                                with open(output_path, "rb") as f:
+                                    st.success("PDFs merged successfully!")
+                                    st.download_button(
+                                        label="📥 Download Merged PDF",
+                                        data=f.read(),
+                                        file_name="merged_output.pdf",
+                                        mime="application/pdf"
+                                    )
+                        else:
+                            st.error(f"Cannot Merge into {target_ext}")
+                else:
+                    st.warning("Multi-file batch processing currently supports merging **PDF files only**.")
+
+            # SINGLE FILE CONVERSION
+            elif len(uploaded_files) == 1:
+                uploaded_file = uploaded_files[0]
+                file_name = uploaded_file.name
+                file_root, original = os.path.splitext(file_name)
+                src_ext = original.lower()
+                
+                user_preference = st.text_input(f"Detected {original}. Enter target format:").strip().lower()
+                if user_preference and not user_preference.startswith('.'):
+                    user_preference = '.' + user_preference
+
+                audio_file_for_video = None
+                if src_ext in image_exts and user_preference in video_exts:
+                    if st.checkbox("Add audio soundtrack?"):
+                        audio_file_for_video = st.file_uploader("Upload Audio File", type=["mp3", "wav", "aac", "flac", "ogg"])
+
+                if user_preference and st.button("Convert File"):
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        user_input_path = os.path.join(tmpdir, file_name)
+                        with open(user_input_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        
+                        output_path = os.path.join(tmpdir, f"{file_root}{user_preference}")
+                        success = True
+
+                        try:
+                            if src_ext in ocr_supported_exts and user_preference == ".txt":
+                                image_to_text(user_input_path, output_path)
+                            elif src_ext and user_preference == ".csv":
+                                df_raw = pd.read_csv(user_input_path)
+                                df_clean = clean_data(df_raw)
+                                df_clean.to_csv(output_path, index=False)
+                            elif src_ext in image_exts and user_preference == ".gif":
+                                image_to_gif(user_input_path, output_path)
+                            elif (src_ext in image_exts or src_ext == ".pdf") and user_preference in [".xlsx", ".xls"]:
+                                image_to_excel(user_input_path, output_path)
+                            elif src_ext in image_exts and user_preference in image_exts:
+                                convert_image(user_input_path, output_path)
+                            elif src_ext in data_exts and user_preference in data_exts:
+                                convert_data(user_input_path, output_path)
+                            elif src_ext in document_exts and user_preference in image_exts:
+                                convert_document(user_input_path, output_path)
+                            elif src_ext in video_exts and user_preference in video_exts:
+                                convert_video(user_input_path, output_path)
+                            elif user_preference in base_map:
+                                base_num = base_map[user_preference]
+                                file_to_base(user_input_path, output_path, base_type=base_num)
+                            elif src_ext in base_map:
+                                base_num = base_map[src_ext]
+                                base_to_file(user_input_path, output_path, base_type=base_num)
+                            elif src_ext in audio_exts and user_preference in audio_exts:
+                                convert_audio(user_input_path, output_path)
+                            elif src_ext in video_exts and user_preference in audio_exts:
+                                convert_audio(user_input_path, output_path)
+                            elif src_ext in image_exts and user_preference in video_exts:
+                                if audio_file_for_video is not None:
+                                    audio_path = os.path.join(tmpdir, audio_file_for_video.name)
+                                    with open(audio_path, "wb") as f_aud:
+                                        f_aud.write(audio_file_for_video.getbuffer())
+                                    add_audio_to_image(user_input_path, audio_path, output_path)
+                                else:
+                                    image_to_video(user_input_path, output_path)
+                            else:
+                                st.error(f"Cannot convert {src_ext} to {user_preference}")
+                                success = False
+
+                            if success and os.path.exists(output_path):
+                                with open(output_path, "rb") as f:
+                                    st.success("Conversion Completed")
+                                    st.download_button(
+                                        label=f"📥 Download {file_root}{user_preference}",
+                                        data=f.read(),
+                                        file_name=f"{file_root}{user_preference}"
+                                    )
+
+                        except Exception as e:
+                            st.error(f"Error during conversion: {e}")
 
 if __name__ == "__main__":
     main()

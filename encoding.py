@@ -1,5 +1,6 @@
 import base64
 from PyPDF2  import PdfReader, PdfWriter
+
 import getpass
 
 # Correct dictionary mapping
